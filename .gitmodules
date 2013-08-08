@@ -1,0 +1,3 @@
+[submodule "lib/repos/lyve-SET"]
+	path = lib/repos/lyve-SET
+	url = ../lyve-SET/
