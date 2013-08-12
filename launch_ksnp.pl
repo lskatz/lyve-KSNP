@@ -58,6 +58,7 @@ sub mergeAssemblies{
 sub fastqToFasta{
   my($reads,$settings)=@_;
   my @out;
+  print "\n";
   for my $r(@$reads){
     my $b=basename($r,qw(.fastq));
     my $out="$$settings{tempdir}/$b.fasta";
@@ -80,7 +81,9 @@ sub fastqToFasta{
     close OUT;
     close FASTQ;
     system("mv $out.tmp $out"); die if $?;
+    print "."; # add a dot to show progress
   }
+  print "\n";
   return @out;
 }
 
