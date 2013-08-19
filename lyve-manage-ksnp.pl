@@ -90,6 +90,7 @@ sub fastqToFasta{
     # output to a temp file and then move it to the correct name, to ensure that file existance checks work
     $command.=" > $out.tmp";
     $command.=" ; mv -v $out.tmp $out";
+    $sge->set("jobname","toFasta-$name");
     $sge->pleaseExecute($command);
   }
   $sge->wrapItUp();
@@ -101,6 +102,7 @@ sub addFastaToDb{
   # add one fasta at a time, so that the database doesn't get corrupted
   for my $f (@$fasta){
     my($name,$path,$suffix)=fileparse($f);
+    $sge->set("jobname","merging-$name");
     $sge->pleaseExecute_andWait("merge_fasta_reads '$f' >> '$db'");
     $sge->pleaseExecute_andWait("echo '$name' >> '$db.reads'");
   }
