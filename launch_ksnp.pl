@@ -17,7 +17,7 @@ sub main{
   my $settings={};
   GetOptions($settings,qw(ref=s@ help tempdir=s));
 
-  my $ref=$$settings{ref} || die usage();
+  my $ref=$$settings{ref} || "";
   my @reads=@ARGV;
   die usage() if (@reads<1);
   $$settings{tempdir}||=die usage();
@@ -48,7 +48,8 @@ sub main{
 sub mergeAssemblies{
   my($ref,$settings)=@_;
   my $mergedFile="$$settings{tempdir}/ref.merged.fasta";
-  return $mergedFile if(-e $mergedFile && -s $mergedFile > 1);
+  system("touch $mergedFile") if(!$ref);
+  return $mergedFile if(-e $mergedFile);
   $sge->pleaseExecute_andWait("cat ".join(" ",@$ref)." > $$settings{tempdir}/ref.fasta",$settings);
   $sge->pleaseExecute_andWait("merge_fasta_contigs $$settings{tempdir}/ref.fasta > $mergedFile",$settings);
   die "ERROR: merged file $mergedFile does not contain an assembly!" if(!-e $mergedFile || -s $mergedFile < 1);
@@ -58,6 +59,7 @@ sub mergeAssemblies{
 sub fastqToFasta{
   my($reads,$settings)=@_;
   my @out;
+  # TODO use sge and fastq_to_fasta executable (now in the directory)
   print "\n";
   for my $r(@$reads){
     my $b=basename($r,qw(.fastq));
