@@ -9,6 +9,7 @@ use Data::Dumper;
 use Getopt::Long;
 use File::Basename;
 use Schedule::SGELK;
+use Filelock qw/:all/;
 
 my $sge=Schedule::SGELK->new(-verbose=>1,-numnodes=>5,-numcpus=>8);
 sub logmsg {local $0=basename $0;$|++;my $FH = *STDOUT; print $FH "$0: ".(caller(1))[3].": @_\n"; $|--;}
