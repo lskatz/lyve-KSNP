@@ -11,20 +11,22 @@ use File::Basename;
 use Schedule::SGELK;
 use Filelock qw/:all/;
 
-my $sge=Schedule::SGELK->new(-verbose=>1,-numnodes=>5,-numcpus=>8);
+my $sge;
 sub logmsg {local $0=basename $0;$|++;my $FH = *STDOUT; print $FH "$0: ".(caller(1))[3].": @_\n"; $|--;}
 exit(main());
 sub main{
   my $settings={};
-  GetOptions($settings,qw(db=s help tempdir=s outdir=s));
+  GetOptions($settings,qw(db=s help tempdir=s outdir=s kmerlength=i keep));
 
   my $ref=$$settings{ref} || "";
-  die usage() if (@reads<1 || $$settings{help});
   $$settings{tempdir}||=die "ERROR: need temporary directory!\n". usage();
   $$settings{db}||=die "ERROR: need fasta database!\n".usage();
   $$settings{numcpus}||=8;
   $$settings{numnodes}||=5;
   $$settings{outdir}||="ksnpOut";
+  $$settings{kmerlength}||=25;
+
+  $sge=Schedule::SGELK->new(-verbose=>1,-numnodes=>5,-numcpus=>8);
   $sge->set("workingdir",$$settings{tempdir});
   for (qw(workingdir numnodes numcpus)){
     $sge->set($_,$$settings{$_});
@@ -34,8 +36,8 @@ sub main{
   system("which kSNP >& /dev/null");
   die "ERROR: could not find kSNP in the path" if $?;
   
-  logmsg "Running ksnp on $allMerged";
-  my $outDir=ksnp($allMerged,$settings);
+  logmsg "Running ksnp on $$settings{db}";
+  my $outDir=ksnp($$settings{db},$settings);
   logmsg "All files are in $outDir";
 
   return 0;
@@ -83,13 +85,16 @@ sub ksnp{
   my $finishedList="$$settings{tempdir}/genomes.finished";
   my $unfinishedList="$$settings{tempdir}/genomes.unfinished";
   my $outDir=$$settings{outdir};
-  $sge->pleaseExecute_andWait("kSNP -f $mergedFasta -k 25 -d $outDir -p $finishedList -u $unfinishedList",$settings);
-  # TODO remove temporary directory in $outdir
+  $sge->pleaseExecute_andWait("kSNP -f $mergedFasta -k $$settings{kmerlength} -d $outDir -p $finishedList -u $unfinishedList -n $$settings{numcpus}",$settings);
+  # remove temporary directory in $outdir called TemporaryFilesToDelete
+  system("rm -rfv $outDir/TemporaryFilesToDelete") unless($$settings{keep});
   return $outDir;
 }
 
 sub usage{
   "Runs kSNP from a 'kSNP database'. You can make this db from lyve-manage-ksnp.pl
   Usage: $0 -d database.fasta -o outdir/ -t tmpdir/
+  -kmerlength kmer length (default: 25)
+  -keep to keep temporary files
   "
 }
