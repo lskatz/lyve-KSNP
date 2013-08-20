@@ -10,6 +10,9 @@ use Getopt::Long;
 use File::Basename;
 use Schedule::SGELK;
 
+my $dir=`dirname $0`;chomp($dir);
+$ENV{PATH}="$ENV{PATH}:$dir/kSNP";
+
 my $sge=Schedule::SGELK->new(-verbose=>1,-numnodes=>5,-numcpus=>8);
 my @fastqExt=qw(.fastq .fastq.gz);
 sub logmsg {local $0=basename $0;$|++;my $FH = *STDOUT; print $FH "$0: ".(caller(1))[3].": @_\n"; $|--;}

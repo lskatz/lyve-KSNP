@@ -11,6 +11,9 @@ use File::Basename;
 use Schedule::SGELK;
 use Filelock qw/:all/;
 
+my $dir=`dirname $0`;chomp($dir);
+$ENV{PATH}="$ENV{PATH}:$dir/kSNP";
+
 my $sge;
 sub logmsg {local $0=basename $0;$|++;my $FH = *STDOUT; print $FH "$0: ".(caller(1))[3].": @_\n"; $|--;}
 exit(main());
