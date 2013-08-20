@@ -21,8 +21,8 @@ sub main{
   my @reads=@ARGV;
   die usage() if (@reads<1);
   $$settings{tempdir}||=die "ERROR: need temporary directory\n". usage();
-  $$settings{numcpus}||=8;
-  $$settings{numnodes}||=5;
+  $$settings{numcpus}||=1;
+  $$settings{numnodes}||=20;
   $$settings{db}||=die "ERROR: need database fasta file\n".usage();
   $$settings{action}||="add";
   $sge->set("workingdir",$$settings{tempdir});
@@ -35,17 +35,43 @@ sub main{
   die "ERROR: could not find kSNP in the path" if $?;
 
   my $db=$$settings{db};
-  $$settings{action}=lc($$settings{action});
-  if($$settings{action} eq "add"){
-    ignoreWhatWeAlreadyHave(\@reads,["$db.reads","$db.assemblies"],$settings);
+  my $action=lc($$settings{action});
+  if($action eq "add"){
+    my $reads=ignoreWhatWeAlreadyHave(\@reads,["$db.reads","$db.assemblies"],$settings);
     logmsg "Converting fastq reads to fasta";
-    my $fasta=fastqToFasta(\@reads,$settings);
+    my $fasta=fastqToFasta($reads,$settings);
     logmsg "Adding fasta to database";
     addFastaToDb($fasta,$db,$settings);
+  }elsif($action eq "remove"){
+    removeSequences(\@reads,$db,$settings);
+  }else{
+    logmsg "I'm unsure what to do with the action $action !".usage();
+    die;
   }
 
   return 0;
 }
+
+sub removeSequences{
+  my($reads,$db,$settings)=@_;
+  claimDb($db,$settings);
+  # back up the database one time instead of many times with sed
+  logmsg "Backing up the database to $db.bak";
+  #system("cp $db $db.bak"); die if $?;
+  for(@$reads){
+    my($name,$path,$suffix)=fileparse($_,@fastqExt);
+    my $fasta="$name.fasta";
+    logmsg "Removing $_ from database";
+    $sge->pleaseExecute("sed --in-place '/$fasta/d' $db");
+    for my $index("$db.reads","$db.assemblies"){
+      $sge->pleaseExecute("sed --in-place '/$fasta/d' $index");
+    }
+    $sge->wrapItUp();
+  }
+  unlockDb($db,$settings);
+  return 1;
+}
+
 
 sub ignoreWhatWeAlreadyHave{
   my($reads,$index,$settings)=@_;
@@ -66,7 +92,8 @@ sub ignoreWhatWeAlreadyHave{
       logmsg "Warning: $name is already present in the database. Ignoring.";
     }
   }
-  $reads=[grep(!/^$/,@$reads)];
+  $reads=[grep(!/^\s*$/,@$reads)];
+  return $reads;
 }
 
 sub fastqToFasta{
@@ -99,6 +126,7 @@ sub fastqToFasta{
 
 sub addFastaToDb{
   my($fasta,$db,$settings)=@_;
+  claimDb($db,$settings);
   # add one fasta at a time, so that the database doesn't get corrupted
   for my $f (@$fasta){
     my($name,$path,$suffix)=fileparse($f);
@@ -107,6 +135,32 @@ sub addFastaToDb{
     $sge->pleaseExecute_andWait("echo '$name' >> '$db.reads'");
   }
   $sge->wrapItUp();
+  unlockDb($db,$settings);
+}
+
+########################
+# database micromanaging
+########################
+sub claimDb{
+  my($db,$settings)=@_;
+  die "ERROR: Database is locked!\n  $db" if(isLocked($db,$settings));
+  lockDb($db,$settings);
+  return 1;
+}
+sub lockDb{
+  my($db,$settings)=@_;
+  system("touch '$db.locked'"); die if $?;
+  return 1;
+}
+sub unlockDb{
+  my($db,$settings)=@_;
+  unlink "$db.locked";
+  return 1;
+}
+sub isLocked{
+  my($db,$settings)=@_;
+  return 1 if(-e "$db.locked");
+  return 0;
 }
 
 sub usage{
