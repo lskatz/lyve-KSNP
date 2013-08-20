@@ -40,7 +40,7 @@ sub main{
     my $reads=ignoreWhatWeAlreadyHave(\@reads,["$db.reads","$db.assemblies"],$settings);
     logmsg "Converting fastq reads to fasta";
     my $fasta=fastqToFasta($reads,$settings);
-    logmsg "Adding fasta to database";
+    logmsg "Adding merged fastas to the database";
     addFastaToDb($fasta,$db,$settings);
   }elsif($action eq "remove"){
     removeSequences(\@reads,$db,$settings);
@@ -57,14 +57,27 @@ sub removeSequences{
   claimDb($db,$settings);
   # back up the database one time instead of many times with sed
   logmsg "Backing up the database to $db.bak";
-  #system("cp $db $db.bak"); die if $?;
+  system("cp $db $db.bak"); die if $?;
+
+  logmsg "Now removing one at a time";
+  die "Removing multiple genomes at a time is not supported right now" if (@$reads>1);
   for(@$reads){
     my($name,$path,$suffix)=fileparse($_,@fastqExt);
     my $fasta="$name.fasta";
+
+    # find which line the read is on
+    my $lineNumber=`grep -n '$fasta' $db.reads | cut -f 1 -d:`; chomp($lineNumber);
+    my $fastaLineNumber=$lineNumber * 2 - 1;
+    my $line2=$fastaLineNumber+1;
+    my $deleteCommand="$fastaLineNumber,$line2"."d";
+    my $indexDeleteCommand=$lineNumber."d";
+
     logmsg "Removing $_ from database";
-    $sge->pleaseExecute("sed --in-place '/$fasta/d' $db");
+    $sge->set("jobname","removeFromFasta-$db");
+    $sge->pleaseExecute("sed --in-place '$deleteCommand' '$db'");
     for my $index("$db.reads","$db.assemblies"){
-      $sge->pleaseExecute("sed --in-place '/$fasta/d' $index");
+      $sge->set("jobname","removeFromIndex-$index");
+      $sge->pleaseExecute("sed --in-place '$indexDeleteCommand' $index");
     }
     $sge->wrapItUp();
   }
@@ -98,15 +111,15 @@ sub ignoreWhatWeAlreadyHave{
 
 sub fastqToFasta{
   my($reads,$settings)=@_;
-  my @out;
+  my (@out,@fastaRead);
   for my $r(@$reads){
     my($name,$path,$suffix)=fileparse($r,@fastqExt);
-    my $out="$$settings{tempdir}/$name.fasta";
-    push(@out,$out);
+    my $fasta="$$settings{tempdir}/$name.fasta";
+    push(@fastaRead,$fasta);
     die "ERROR: suffix not understood for $r" if(!$suffix);
-    logmsg "$r => $out";
+    logmsg "$r => $fasta";
 
-    next if(-e $out);
+    next if(-e $fasta);
     # execute the command to convert
     my $command="fastq_to_fasta -Q33";
     if($suffix=~/gz/){
@@ -115,10 +128,22 @@ sub fastqToFasta{
       $command="$command < '$r'";
     }
     # output to a temp file and then move it to the correct name, to ensure that file existance checks work
-    $command.=" > $out.tmp";
-    $command.=" ; mv -v $out.tmp $out";
+    $command.=" > $fasta.tmp";
+    $command.=" ; mv -v $fasta.tmp $fasta";
     $sge->set("jobname","toFasta-$name");
     $sge->pleaseExecute($command);
+  }
+  $sge->wrapItUp();
+
+  # merge the fasta reads
+  for my $f (@fastaRead){
+    my($name,$path,$suffix)=fileparse($f,".fasta");
+    my $merged="$$settings{tempdir}/$name.merged.fasta";
+    logmsg "$f => $merged";
+    push(@out,$merged);
+    next if(-e $merged);
+
+    $sge->pleaseExecute("merge_fasta_reads '$f' > $merged.tmp && mv -v $merged.tmp $merged");
   }
   $sge->wrapItUp();
   return \@out;
@@ -126,14 +151,14 @@ sub fastqToFasta{
 
 sub addFastaToDb{
   my($fasta,$db,$settings)=@_;
+  my $sortedFiles=join(" ",@$fasta);
+  my @indexedNames=map{basename($_,".merged.fasta").".fasta"} @$fasta;
+  my $indexedNames=join("\n",@indexedNames);
   claimDb($db,$settings);
-  # add one fasta at a time, so that the database doesn't get corrupted
-  for my $f (@$fasta){
-    my($name,$path,$suffix)=fileparse($f);
-    $sge->set("jobname","merging-$name");
-    $sge->pleaseExecute_andWait("merge_fasta_reads '$f' >> '$db'");
-    $sge->pleaseExecute_andWait("echo '$name' >> '$db.reads'");
-  }
+  $sge->set("jobname","mergingTheDatabase");
+  $sge->pleaseExecute("cat $sortedFiles >> '$db'");
+  $sge->set("jobname","addingIndexes");
+  $sge->pleaseExecute("echo '$indexedNames' >> '$db.reads'");
   $sge->wrapItUp();
   unlockDb($db,$settings);
 }
