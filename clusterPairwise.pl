@@ -11,8 +11,9 @@ sub logmsg{$|++;print STDERR "@_\n";$|--}
 exit(main());
 sub main{
   my $settings={};
-  GetOptions($settings,qw(help maxdist=s));
+  GetOptions($settings,qw(help maxdist=s perCluster=i));
   die usage() if($$settings{help});
+  $$settings{perCluster}||=2;
   $$settings{maxdist}||=die "ERROR: need a maximum distance\n".usage();
 
   my $neighbor=identifyCloseNeighbors($settings);
@@ -50,6 +51,7 @@ sub findClusters{
     my $cluster=findClusterAroundNode($centerNode,\%neighbor,$seen,$settings);
     next if(!@$cluster);
     unshift(@$cluster,$centerNode);
+    next if(@$cluster<$$settings{perCluster});
     print join("\t",scalar(@$cluster),@$cluster)."\n";
     push(@cluster,$cluster);
   }
@@ -97,5 +99,6 @@ sub usage{
   genome1  genome2  distance
   Usage: $0 -m maxdist < distances.txt
   -m the maximum distance between two nodes in a cluster.
+  -p the minimum number per cluster, before reporting it (default: 2)
   "
 }
