@@ -16,10 +16,12 @@ sub main{
   $$settings{maxdist}||=die "ERROR: need a maximum distance\n".usage();
 
   my $neighbor=identifyCloseNeighbors($settings);
-  findClusters($neighbor,$settings);
+  my @$cluster=findClusters($neighbor,$settings);
+  logmsg "Found ".scalar(@$cluster)." clusters";
   return 0;
 }
 
+# parse the input file and retain only close neighbors
 sub identifyCloseNeighbors{
   my($settings)=@_;
   my %neighbor;
@@ -49,15 +51,18 @@ sub findClusters{
     next if(!@$cluster);
     unshift(@$cluster,$centerNode);
     print join("\t",scalar(@$cluster),@$cluster)."\n";
+    push(@cluster,$cluster);
   }
-  return 1;
+  return \@cluster;
 }
+
+# given a "center" node, find the cluster around it
 sub findClusterAroundNode{
   my($centerNode,$neighbor,$seen,$settings)=@_;
   my @cluster; # the output
   
-  #die "ERROR too many levels:$$settings{cluster_level} ".Dumper($seen) if($$settings{cluster_level}++ > 20);
-  #return \@cluster if($$settings{cluster_level}++ > 999);
+  # Failsafe: don't keep processing if you are recursing too deep
+  return \@cluster if($$settings{cluster_level}++ > 9999);
 
   my $neighbors=$$neighbor{$centerNode};
   for my $n(@$neighbors){
@@ -71,6 +76,7 @@ sub findClusterAroundNode{
   return \@cluster;
 }
 
+# delete a node once it has been used, so that we don't backtrack
 sub deleteNode{
   my($node,$neighbor,$settings)=@_;
   delete($$neighbor{$node});
