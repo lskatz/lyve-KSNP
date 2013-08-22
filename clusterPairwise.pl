@@ -16,7 +16,7 @@ sub main{
   $$settings{maxdist}||=die "ERROR: need a maximum distance\n".usage();
 
   my $neighbor=identifyCloseNeighbors($settings);
-  my @$cluster=findClusters($neighbor,$settings);
+  my $cluster=findClusters($neighbor,$settings);
   logmsg "Found ".scalar(@$cluster)." clusters";
   return 0;
 }
