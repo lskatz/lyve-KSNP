@@ -196,5 +196,6 @@ sub usage{
   Usage: $0 *.fastq[.gz] -d database.fasta
   -d database of merged fastas, produced by ksnp executable merge_fasta_reads
   --action indicates one of the following: add, remove. Default: add
+  -t tmp/
   "
 }

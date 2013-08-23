@@ -88,7 +88,7 @@ sub ksnp{
   my $finishedList="$$settings{tempdir}/genomes.finished";
   my $unfinishedList="$$settings{tempdir}/genomes.unfinished";
   my $outDir=$$settings{outdir};
-  $sge->pleaseExecute_andWait("kSNP -f $mergedFasta -k $$settings{kmerlength} -d $outDir -p $finishedList -u $unfinishedList -n $$settings{numcpus}",$settings);
+  $sge->pleaseExecute_andWait("kSNP_notrees -f $mergedFasta -k $$settings{kmerlength} -d $outDir -p $finishedList -u $unfinishedList -n $$settings{numcpus}",$settings);
   # remove temporary directory in $outdir called TemporaryFilesToDelete
   system("rm -rfv $outDir/TemporaryFilesToDelete") unless($$settings{keep});
   return $outDir;
