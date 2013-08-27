@@ -11,11 +11,13 @@ sub logmsg{$|++;print STDERR "@_\n";$|--}
 exit(main());
 sub main{
   my $settings={};
-  GetOptions($settings,qw(help maxdist=s perCluster=i));
+  GetOptions($settings,qw(help maxdist=s perCluster=i histogram));
   die usage() if($$settings{help});
   $$settings{perCluster}||=2;
-  $$settings{maxdist}||=die "ERROR: need a maximum distance\n".usage();
 
+  return histogram($settings) if($$settings{histogram});
+
+  $$settings{maxdist}||=die "ERROR: need a maximum distance\n".usage();
   my $neighbor=identifyCloseNeighbors($settings);
   my $cluster=findClusters($neighbor,$settings);
   logmsg "Found ".scalar(@$cluster)." clusters";
@@ -91,6 +93,22 @@ sub deleteNode{
   return $neighbor;
 }
 
+sub histogram{
+  my($settings)=@_;
+  my(%hist);
+  while(<>){
+    chomp;
+    my $dist=(split /\t/)[2];
+    my $rounded=100*int($dist/100);
+    $hist{$rounded}++;
+  }
+  my @hist=sort {$a<=>$b} keys(%hist);
+  for my $num(@hist){
+    print "$num $hist{$num}\n";
+  }
+  return 0;
+}
+
 
 ## histogram
 # cut -f 3 pairwiseDist-MT.txt | perl -lane '$rounded=100*int($F[0]/100);$num{$rounded}++;END{while(($num,$count)=each(%num)){print "$count\t$num";}}' | sort -k2,2n 
@@ -100,5 +118,7 @@ sub usage{
   Usage: $0 -m maxdist < distances.txt
   -m the maximum distance between two nodes in a cluster.
   -p the minimum number per cluster, before reporting it (default: 2)
+  --help this help menu
+  --histogram to display a histogram and then exit
   "
 }
