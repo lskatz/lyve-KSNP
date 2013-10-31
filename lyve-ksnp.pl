@@ -30,6 +30,7 @@ sub main{
   $$settings{kmerlength}||=25;
 
   $sge=Schedule::SGELK->new(-verbose=>1,-numnodes=>5,-numcpus=>8);
+  $sge->set('qsubxopts',$$settings{qsubxopts}) if($$settings{qsubxopts});
   $sge->set("workingdir",$$settings{tempdir});
   for (qw(workingdir numnodes numcpus)){
     $sge->set($_,$$settings{$_});
