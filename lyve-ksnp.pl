@@ -19,7 +19,7 @@ sub logmsg {local $0=basename $0;$|++;my $FH = *STDOUT; print $FH "$0: ".(caller
 exit(main());
 sub main{
   my $settings={};
-  GetOptions($settings,qw(db=s help tempdir=s outdir=s kmerlength=i keep));
+  GetOptions($settings,qw(db=s help tempdir=s outdir=s kmerlength=i keep qsubxopts=s));
 
   my $ref=$$settings{ref} || "";
   $$settings{tempdir}||=die "ERROR: need temporary directory!\n". usage();
@@ -100,5 +100,6 @@ sub usage{
   Usage: $0 -d database.fasta -o outdir/ -t tmpdir/
   -kmerlength kmer length (default: 25)
   -keep to keep temporary files
+  -q qsubxopts Any extra option you want to pass to qsub, e.g. -q '-q long.q'
   "
 }
