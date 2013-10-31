@@ -171,7 +171,11 @@ sub addFastaToDb{
 ########################
 sub claimDb{
   my($db,$settings)=@_;
-  die "ERROR: Database is locked!\n  $db" if(isLocked($db,$settings));
+  while(isLocked($db,$settings)){
+    warn "WARNING: Database is locked! Waiting 10 seconds...\n";
+    sleep 10;
+  }
+  #die "ERROR: Database is locked!\n  $db" if(isLocked($db,$settings));
   lockDb($db,$settings);
   return 1;
 }
