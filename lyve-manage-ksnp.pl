@@ -15,6 +15,7 @@ $ENV{PATH}="$ENV{PATH}:$dir/kSNP";
 
 my $sge=Schedule::SGELK->new(-verbose=>1,-numnodes=>5,-numcpus=>8);
 my @fastqExt=qw(.fastq .fastq.gz);
+my @fastaExt=qw(.fasta .fna .fa);
 sub logmsg {local $0=basename $0;$|++;my $FH = *STDOUT; print $FH "$0: ".(caller(1))[3].": @_\n"; $|--;}
 exit(main());
 sub main{
@@ -45,6 +46,9 @@ sub main{
     my $fasta=fastqToFasta($reads,$settings);
     logmsg "Adding merged fastas to the database";
     addFastaToDb($fasta,$db,$settings);
+
+    logmsg "Adding finished genomes to the database";
+    addFinishedGenomesToDb($reads,$db,$settings);
   }elsif($action eq "remove"){
     removeSequences(\@reads,$db,$settings);
   }else{
@@ -118,8 +122,9 @@ sub fastqToFasta{
   for my $r(@$reads){
     my($name,$path,$suffix)=fileparse($r,@fastqExt);
     my $fasta="$$settings{tempdir}/$name.fasta";
+    next if(!$suffix); # meaning, it is not a fastq
     push(@fastaRead,$fasta);
-    die "ERROR: suffix not understood for $r" if(!$suffix);
+    #die "ERROR: suffix not understood for $r" if(!$suffix);
     logmsg "$r => $fasta";
 
     next if(-e $fasta);
@@ -158,12 +163,43 @@ sub addFastaToDb{
   my @indexedNames=map{basename($_,".merged.fasta").".fasta"} @$fasta;
   my $indexedNames=join("\n",@indexedNames);
   claimDb($db,$settings);
-  $sge->set("jobname","mergingTheDatabase");
+  $sge->set("jobname","mergingTheDatabase-Reads");
   $sge->pleaseExecute("cat $sortedFiles >> '$db'");
   $sge->set("jobname","addingIndexes");
   $sge->pleaseExecute("echo '$indexedNames' >> '$db.reads'");
   $sge->wrapItUp();
   unlockDb($db,$settings);
+}
+
+sub addFinishedGenomesToDb{
+  my($fasta,$db,$settings)=@_;
+
+  # merging
+  my @merged;
+  my @indexedNames;
+  for my $f(@$fasta){
+    my($name,$path,$suffix)=fileparse($f,@fastaExt);
+    my $merged="$$settings{tempdir}/$name.mergedContigs.fasta";
+    logmsg "$f => $merged";
+    push(@merged,$merged);
+    push(@indexedNames,$name);
+    next if(-e $merged);
+    
+    logmsg "merge_fasta_contigs '$f' > $merged.tmp && mv -v $merged.tmp $merged";die;
+    die;
+
+    $sge->pleaseExecute("merge_fasta_contigs '$f' > $merged.tmp && mv -v $merged.tmp $merged");
+  }
+  $sge->wrapItUp();
+
+  # adding to db
+  claimDb($db,$settings);
+  my $indexedNames=join("\n",@indexedNames);
+  $sge->pleaseExecute("cat ".join(" ",@merged)." >> '$db'",{jobname=>"mergingTheDatabase-FinishedGenome"});
+  $sge->pleaseExecute("echo '$indexedNames' >> '$db.assemblies",{jobname=>"addingIndexes"});
+  $sge->wrapItUp();
+
+  return 1;
 }
 
 ########################
