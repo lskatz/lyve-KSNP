@@ -48,6 +48,7 @@ sub main{
     addFastaToDb($fasta,$db,$settings);
 
   }elsif($action eq "add-assemblies"){
+    my $reads=ignoreWhatWeAlreadyHave(\@reads,["$db.reads","$db.assemblies"],$settings);
     logmsg "Adding finished genomes to the database";
     addFinishedGenomesToDb($reads,$db,$settings);
   }elsif($action eq "remove"){
@@ -203,10 +204,14 @@ sub addFinishedGenomesToDb{
 
   # adding to db
   claimDb($db,$settings);
-  my $indexedNames=join("\n",@indexedNames);
   $sge->pleaseExecute("cat ".join(" ",@merged)." >> '$db'",{jobname=>"mergingTheDatabase-FinishedGenome"});
-  $sge->pleaseExecute("echo '$indexedNames' >> '$db.assemblies",{jobname=>"addingIndexes"});
   $sge->wrapItUp();
+
+  logmsg "Sequences have been added to the db. Now adding to the index";
+  my $indexedNames=join("\n",@indexedNames);
+  open(ASSEMBLYINDEX,">>","$db.assemblies") or die "ERROR: could not open assemblies index file $db.assemblies: $!";
+  print ASSEMBLYINDEX "$indexedNames\n";
+  close ASSEMBLYINDEX;
 
   return 1;
 }
