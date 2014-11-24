@@ -47,6 +47,7 @@ sub main{
     logmsg "Adding merged fastas to the database";
     addFastaToDb($fasta,$db,$settings);
 
+  }elsif($action eq "add-assemblies"){
     logmsg "Adding finished genomes to the database";
     addFinishedGenomesToDb($reads,$db,$settings);
   }elsif($action eq "remove"){
@@ -244,7 +245,7 @@ sub usage{
   Usage: $0 *.fastq[.gz] -d database.fasta
   NOTE: you can also add fasta files that have already been converted; however you cannot add already-merged fasta files.
   -d database of merged fastas, produced by ksnp executable merge_fasta_reads
-  --action indicates one of the following: add, remove. Default: add
+  --action indicates one of the following: add, add-assemblies, remove. Default: add
   -t tmp/
   "
 }
