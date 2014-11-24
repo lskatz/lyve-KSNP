@@ -120,26 +120,34 @@ sub fastqToFasta{
   my($reads,$settings)=@_;
   my (@out,@fastaRead);
   for my $r(@$reads){
-    my($name,$path,$suffix)=fileparse($r,@fastqExt);
+    my($name,$path,$suffix)=fileparse($r,@fastqExt,@fastaExt);
     my $fasta="$$settings{tempdir}/$name.fasta";
     next if(!$suffix); # meaning, it is not a fastq
     push(@fastaRead,$fasta);
     #die "ERROR: suffix not understood for $r" if(!$suffix);
     logmsg "$r => $fasta";
-
     next if(-e $fasta);
-    # execute the command to convert
-    my $command="fastq_to_fasta -Q33";
-    if($suffix=~/gz/){
-      $command="gunzip -c '$r' | $command";
+
+    my $fastqRegex="(".join("|",@fastqExt).")\$";
+    my $fastaRegex="(".join("|",@fastaExt).")\$";
+    if($suffix=~/$fastqRegex/){
+      # execute the command to convert
+      my $command="fastq_to_fasta -Q33";
+      if($suffix=~/gz/){
+        $command="gunzip -c '$r' | $command";
+      } else {
+        $command="$command < '$r'";
+      }
+      # output to a temp file and then move it to the correct name, to ensure that file existance checks work
+      $command.=" > $fasta.tmp";
+      $command.=" ; mv -v $fasta.tmp $fasta";
+      $sge->set("jobname","toFasta-$name");
+      $sge->pleaseExecute($command);
+    } elsif($suffix=~/$fastaRegex/){
+      $sge->pleaseExecute("cp '$r' '$fasta'");
     } else {
-      $command="$command < '$r'";
+      die "ERROR: could not determine the filetype of $r";
     }
-    # output to a temp file and then move it to the correct name, to ensure that file existance checks work
-    $command.=" > $fasta.tmp";
-    $command.=" ; mv -v $fasta.tmp $fasta";
-    $sge->set("jobname","toFasta-$name");
-    $sge->pleaseExecute($command);
   }
   $sge->wrapItUp();
 
