@@ -242,6 +242,7 @@ sub isLocked{
 sub usage{
   "Adds raw reads to a database for kSNP
   Usage: $0 *.fastq[.gz] -d database.fasta
+  NOTE: you can also add fasta files that have already been converted; however you cannot add already-merged fasta files.
   -d database of merged fastas, produced by ksnp executable merge_fasta_reads
   --action indicates one of the following: add, remove. Default: add
   -t tmp/
