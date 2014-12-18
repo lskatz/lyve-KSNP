@@ -23,12 +23,12 @@ sub main{
   GetOptions($settings,qw(help tempdir=s db=s action=s));
 
   my @reads=@ARGV;
-  die usage() if (@reads<1);
+  die usage() if ($$settings{help});
   $$settings{tempdir}||=die "ERROR: need temporary directory\n". usage();
   $$settings{numcpus}||=1;
   $$settings{numnodes}||=20;
   $$settings{db}||=die "ERROR: need database fasta file\n".usage();
-  $$settings{action}||="add";
+  $$settings{action}||="query";
   $sge->set("workingdir",$$settings{tempdir});
   for (qw(workingdir numnodes numcpus)){
     $sge->set($_,$$settings{$_});
@@ -53,6 +53,10 @@ sub main{
     addFinishedGenomesToDb($reads,$db,$settings);
   }elsif($action eq "remove"){
     removeSequences(\@reads,$db,$settings);
+  }elsif($action eq "query"){
+    queryDatabase(\@reads,$db,$settings);
+  }elsif($action eq "repair"){
+    repairDatabase(\@reads,$db,$settings);
   }else{
     logmsg "I'm unsure what to do with the action $action !".usage();
     die;
@@ -75,7 +79,7 @@ sub removeSequences{
     my $fasta="$name.fasta";
 
     # find which line the read is on
-    my $lineNumber=`grep -n '$fasta' $db.reads | cut -f 1 -d:`; chomp($lineNumber);
+    my $lineNumber=`grep -n '$fasta' $db.index | cut -f 1 -d:`; chomp($lineNumber);
     my $fastaLineNumber=$lineNumber * 2 - 1;
     my $line2=$fastaLineNumber+1;
     my $deleteCommand="$fastaLineNumber,$line2"."d";
@@ -216,6 +220,88 @@ sub addFinishedGenomesToDb{
   return 1;
 }
 
+sub queryDatabase{
+  my($query,$db,$settings)=@_;
+  claimDb($db,$settings);
+
+  # If there is no query, then just show everything
+  if(@$query < 1){
+    system("touch $db.reads") if(! -e "$db.reads");
+    open(DB,"$db.reads") or die "ERROR: could not open $db.reads: $!";
+    while(<DB>){
+      print;
+    }
+    close DB;
+    system("touch $db.assemblies") if(! -e "$db.assemblies");
+    open(DB,"$db.assemblies") or die "ERROR: could not open $db.assemblies: $!";
+    while(<DB>){
+      print;
+    }
+  }
+
+  # If there is a query just show what matches
+  if(@$query > 0){
+    for my $file("$db.reads","$db.assemblies"){
+      my $cmd="grep -Hi '$_' '$file'";
+      system("$cmd 2>&1");
+      die "ERROR with grep: $!\n  $cmd";
+    }
+  }
+
+  unlockDb($db,$settings);
+}
+
+sub repairDatabase{
+  my($query,$db,$settings)=@_;
+  logmsg "Repairing the database $db";
+  claimDb($db,$settings);
+
+  # The database is one line for the defline and one line for the sequence.
+  # Therefore I can probably assume that anything > 10M nts is raw reads and anything lower is an assembly.
+  # It is also vital to read these in order so that the correct lines are kept intact
+  open(DB,$db) or die "ERROR: could not open $db: $!";
+  my $i=0;
+  my $defline="";
+  my $is_reads=0;
+  my (@assembly,@reads,@index);
+  while(<DB>){
+    if($i % 2 ==0){
+      chomp;
+      $defline=$_;
+      $defline=~s/^>//;     # remove >
+      $defline=~s/\s+.+$//; # keep only first "word"
+    } else {
+      if(length($_) > 10*(10**6)){
+        logmsg "Binning $defline into reads";
+        push(@reads,$defline);
+        push(@index,$defline);
+      } else {
+        logmsg "Binning $defline into assemblies";
+        push(@assembly,$defline);
+        push(@index,$defline);
+      }
+    }
+
+    $i++;
+  }
+  close DB;
+
+  logmsg "Writing the index";
+  # put all assemblies and reads into the right place
+  open(READSINDEX,">$db.reads") or die "ERROR: Could not open $db.reads: $!";
+  print READSINDEX "$_\n" for(@reads);
+  close READSINDEX;
+  open(ASMINDEX,">$db.assemblies") or die "ERROR: Could not open $db.assemblies: $!";
+  print ASMINDEX "$_\n" for(@assembly);
+  close ASMINDEX;
+  # and lastly the lyve index
+  open(INDEX,">$db.index") or die "ERROR: Could not open $db.index: $!";
+  print INDEX "$_\n" for(@index);
+  close INDEX;
+
+  unlockDb($db,$settings);
+}
+
 ########################
 # database micromanaging
 ########################
@@ -250,7 +336,7 @@ sub usage{
   Usage: $0 *.fastq[.gz] -d database.fasta
   NOTE: you can also add fasta files that have already been converted; however you cannot add already-merged fasta files.
   -d database of merged fastas, produced by ksnp executable merge_fasta_reads
-  --action indicates one of the following: add, add-assemblies, remove. Default: add
+  --action indicates one of the following: add, add-assemblies, remove, query. Default: query
   -t tmp/
   "
 }
