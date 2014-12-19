@@ -39,6 +39,10 @@ sub main{
   die "ERROR: could not find kSNP in the path" if $?;
 
   my $db=$$settings{db};
+  # alter what happens if it dies or ctrl-c's so that the db is unlocked
+  $SIG{__DIE__}=sub{unlockDb($db,$settings); die "@_\n"};
+  $SIG{INT}=$SIG{__DIE__};
+
   my $action=lc($$settings{action});
   if($action eq "add"){
     my $reads=ignoreWhatWeAlreadyHave(\@reads,["$db.reads","$db.assemblies"],$settings);
@@ -69,28 +73,27 @@ sub removeSequences{
   my($reads,$db,$settings)=@_;
   claimDb($db,$settings);
   # back up the database one time instead of many times with sed
-  logmsg "Backing up the database to $db.bak";
-  system("cp $db $db.bak"); die if $?;
 
-  logmsg "Now removing one at a time";
+  logmsg "Removing one at a time";
   die "Removing multiple genomes at a time is not supported right now" if (@$reads>1);
   for(@$reads){
     my($name,$path,$suffix)=fileparse($_,@fastqExt);
-    my $fasta="$name.fasta";
+    my $entryname=fileparse($_);
 
     # find which line the read is on
-    my $lineNumber=`grep -n '$fasta' $db.index | cut -f 1 -d:`; chomp($lineNumber);
+    my $lineNumber=`grep -n '$entryname' $db.index | cut -f 1 -d:`; 
+    $lineNumber=~s/^\s+|\s+$//g; # trim whitespace
+    die "ERROR: I could not find '$entryname' in $db.index" if($lineNumber!~/^\d+$/);
+
     my $fastaLineNumber=$lineNumber * 2 - 1;
     my $line2=$fastaLineNumber+1;
     my $deleteCommand="$fastaLineNumber,$line2"."d";
     my $indexDeleteCommand=$lineNumber."d";
 
-    logmsg "Removing $_ from database";
-    $sge->set("jobname","removeFromFasta-$db");
-    $sge->pleaseExecute("sed --in-place '$deleteCommand' '$db'");
-    for my $index("$db.reads","$db.assemblies"){
-      $sge->set("jobname","removeFromIndex-$index");
-      $sge->pleaseExecute("sed --in-place '$indexDeleteCommand' $index");
+    logmsg "Removing $entryname from database";
+    $sge->pleaseExecute("sed --in-place '$deleteCommand' '$db'",{jobname=>"removeFromFasta-$db",numcpus=>1});
+    for my $index("$db.reads","$db.assemblies","$db.index"){
+      $sge->pleaseExecute("sed --in-place '/$entryname/d' $index",{jobname=>"removeFromIndex-$index",numcpus=>1});
     }
     $sge->wrapItUp();
   }
