@@ -85,6 +85,9 @@ sub removeSequences{
     $lineNumber=~s/^\s+|\s+$//g; # trim whitespace
     die "ERROR: I could not find '$entryname' in $db.index" if($lineNumber!~/^\d+$/);
 
+    # Because each index line is an entry but each fasta entry is two lines,
+    # The fasta entry will be at the line that is double the index line
+    # but minus one.  Also the sequence itself will be the next line.
     my $fastaLineNumber=$lineNumber * 2 - 1;
     my $line2=$fastaLineNumber+1;
     my $deleteCommand="$fastaLineNumber,$line2"."d";
@@ -338,8 +341,15 @@ sub usage{
   "Adds raw reads to a database for kSNP
   Usage: $0 *.fastq[.gz] -d database.fasta
   NOTE: you can also add fasta files that have already been converted; however you cannot add already-merged fasta files.
-  -d database of merged fastas, produced by ksnp executable merge_fasta_reads
-  --action indicates one of the following: add, add-assemblies, remove, query. Default: query
+  -d database Of merged fastas, produced by ksnp executable merge_fasta_reads
+              The database can also be a blank or nonexistant file that this
+              script can create.
+  --action indicates one of the following: add, add-assemblies, remove, repair, query. Default: query
+    add:            add reads
+    add-assemblies: add assembly
+    remove:         remove entry
+    repair:         recreate the ksnp fasta file index files
+    query:          find out if an entry is present
   -t tmp/
   "
 }
