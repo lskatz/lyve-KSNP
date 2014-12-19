@@ -47,6 +47,11 @@ use File::Slurp qw/read_file write_file/;
 use File::Temp qw/tempdir/;
 use String::Escape qw/escape/;
 
+my $has_threads=eval{
+  require threads;
+  return 1;
+};
+
 # some global variables
 my @jobsToClean=();
 my @jobsToMonitor=();
@@ -115,7 +120,7 @@ sub new{
   }
 
   # set defaults if they are not set
-  my %default=(numnodes=>50,numcpus=>128,verbose=>0,waitForEachJobToStart=>0,maxslots=>9999,queue=>"all.q");
+  my %default=(numnodes=>50,numcpus=>128,verbose=>0,waitForEachJobToStart=>0,maxslots=>9999,queue=>"all.q",scheduler=>"SGE");
   while(my($key,$value)=each(%default)){
     $self->settings($key,$value) if(!defined($self->settings($key)));
   }
@@ -130,7 +135,10 @@ sub new{
     $exec="" if $?;
     chomp($exec);
     $self->set($_,$exec);
+
+    $self->set("scheduler","") if(!$exec);
   }
+  $self->set("scheduler","") if($self->get("noqsub"));
 
   return $self;
 }
@@ -242,7 +250,7 @@ sub pleaseExecute{
   $prefix="$settings{workingdir}/$prefix.$rand";
   my($submitted,$running,$finished,$died,$output)=("$prefix.submitted", "$prefix.running", "$prefix.finished","$prefix.died","$prefix.log");
    
-  my $perl=`which perl`;
+  my $perl=`which perl`; chomp($perl);
   open(SCRIPT,">",$script) or die "Could not write to temporary script: $!";
   print SCRIPT "#! $perl\n\n";
   #   It has SGE params in it.
@@ -264,9 +272,9 @@ sub pleaseExecute{
 
   # announces that it was submitted
   my $sanitized=escape('qqbackslash',$cmd);
-  print SCRIPT "write_file('$submitted',$sanitized\n);\n";
+  print SCRIPT "write_file('$submitted',$sanitized);\n";
   # it runs the command
-  print SCRIPT "write_file('$running',$sanitized\n);\n";
+  print SCRIPT "write_file('$running',$sanitized);\n";
   print SCRIPT "system($sanitized);\n";
   # let the script try one more time if it fails
   #print SCRIPT "system($sanitized) if \$?;\n";
@@ -280,7 +288,7 @@ if(\$?){
 }
 END
   # announces when it is finished
-  print SCRIPT "write_file('$finished',$sanitized\n);\n";
+  print SCRIPT "write_file('$finished',$sanitized);\n";
   close SCRIPT;
   system("touch $script"); die if $?; # make the system close the script. Why isn't Perl closing it?
   #system("cat $script");sleep 60;die;
@@ -288,18 +296,13 @@ END
   # now run the script and get the jobid
   my %return=(submitted=>$submitted,running=>$running,finished=>$finished,died=>$died,tempdir=>$tempdir,output=>$output,cmd=>$cmd,script=>$script,jobname=>$settings{jobname},numcpus=>$settings{numcpus});
   my $qsub=$self->get("qsub");
-  if(!$qsub || $settings{noqsub}){
-    my $msg="Running a system call.";
-    if(!$qsub){
-      $msg="Warning: qsub was not found!  $msg";
-    } elsif($settings{noqsub}){
-      $msg="noqsub was specified for this job.  $msg";
-    } else{
-      
-    }
-    logmsg $msg;
-    system("perl $script;");
-    die if $?;
+  if(!$settings{scheduler}){
+    my $job=command("$perl $script",$has_threads,\%settings);
+    $return{thread}=$job if($has_threads);
+    $return{jobid}=$job->tid if($has_threads);
+    push(@jobsToClean,\%return) if(!$self->settings("keep"));
+    push(@jobsToMonitor,\%return);
+    $numSlots+=$settings{numcpus}; # claim these cpus
     return %return if wantarray;
     return \%return;
   } 
@@ -439,9 +442,13 @@ sub jobStatus{
 
 =pod
 
+=over
+
 =item qstat
 
 Runs qstat and caches the result for one second. Or, returns the cached result of qstat
+
+=back
 
 =cut
 
@@ -469,7 +476,7 @@ sub qstat{
 =item wrapItUp()
 
 Waits on all jobs to finish before pausing the program.
-Calls waitOnJobs internally. Does not take any parameters.
+Calls waitOnJobs or joinAllThreads internally. Does not take any parameters.
 
 =back
 
@@ -478,9 +485,55 @@ Calls waitOnJobs internally. Does not take any parameters.
 # Wait on all jobs to finish and clear out the queue.
 sub wrapItUp{
   my($self)=@_;
-  $self->waitOnJobs(\@jobsToMonitor,1);
+  if($self->get("scheduler")){
+    $self->waitOnJobs(\@jobsToMonitor,1);
+  } elsif($has_threads){
+    $self->joinAllThreads(\@jobsToMonitor,1);
+  }
   return 1;
 }
+
+=pod
+
+=over
+
+=item joinAllThreads($jobList)
+
+Joins all threads.  This is if you have ithreads and if the scheduler is not set.
+For example, if you specify noqsub or if qsub executable is not found.
+
+=back
+
+=cut
+
+sub joinAllThreads{
+  my($self,$job)=@_;
+
+  JOINALLTHREADS:
+  for my $j(@$job){
+    next if(!$$j{thread});
+    next if($$j{thread} && !$$j{thread}->is_joinable);
+    logmsg "Joining TID".$$j{jobid};
+    $$j{thread}->join;
+    $$j{thread}=0;
+  }
+
+  # clean out the joined jobs
+  my @newjob;
+  for my $j(@$job){
+    push(@newjob,$j) if($$j{thread});
+  }
+  $job=\@newjob;
+
+  # if there is still something in @$job, then go for another round
+  if(@$job){
+    logmsg "Waiting for ".scalar(@$job)." more jobs to finish...";
+    sleep 1;
+    goto JOINALLTHREADS;
+  }
+
+}
+
 
 =pod
 
@@ -572,6 +625,20 @@ sub mktempdir{
   my $tempdir_path = File::Spec->join("./.SGELK",(split("::",(caller(1))[3]))[1].".$$.XXXXX");
   my $tempdir = tempdir($tempdir_path, CLEANUP => !($$settings{keep}));
   return $tempdir;
+}
+
+sub command{
+  my($cmd,$use_threads,$settings)=@_;
+  my $job=0;
+  if($use_threads){
+    $job=threads->new(\&command,$cmd,0,$settings);
+  } else {
+    logmsg "Running $cmd";
+    system($cmd);
+    die "ERROR with command: $!\n  $cmd" if $?;
+  }
+
+  return $job;
 }
 
 
