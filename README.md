@@ -36,3 +36,13 @@ Usage
           -kmerlength kmer length (default: 25)
           -keep to keep temporary files
           -q qsubxopts Any extra option you want to pass to qsub, e.g. -q '-q long.q'
+
+Output files
+------------
+1. The fasta file that you specify in `lyve-manage-ksnp.pl`, e.g., db.fasta
+2. The database files for Lyve-KSNP
+  3. `db.fasta.reads`: the raw reads filenames that KSNP needs
+  4. `db.fasta.assemblies`: the finished assemblies filenames that KSNP needs
+  5. `db.fasta.index`: the index file that Lyve-KSNP needs
+  6. `db.fasta.locked`: This zero-byte file will appear when running Lyve-KSNP to avoid concurrency
+7. out/  The KSNP output directory
